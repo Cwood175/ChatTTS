@@ -1,19 +1,19 @@
-import os, sys
+import os
+import sys
 
 if sys.platform == "darwin":
     os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 
 now_dir = os.getcwd()
-sys.path.append(now_dir)
+sys.path.insert(0, now_dir)
 
 import logging
 import re
 
 import ChatTTS
-
 from tools.logger import get_logger
 
-logger = get_logger("Test", lv=logging.WARN)
+logger = get_logger("Test", lv=logging.WARNING)
 
 chat = ChatTTS.Chat(logger)
 chat.load(compile=False, source="huggingface")  # Set to True for better performance
@@ -33,7 +33,7 @@ refined = chat.infer(
     params_refine_text=ChatTTS.Chat.RefineTextParams(show_tqdm=False),
 )
 
-trimre = re.compile("\\[[\w_]+\\]")
+trimre = re.compile("\\[[\\w_]+\\]")
 
 
 def trim_tags(txt: str) -> str:
