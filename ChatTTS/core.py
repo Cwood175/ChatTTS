@@ -105,7 +105,7 @@ class Chat:
             if download_path is None or force_redownload:
                 self.logger.log(
                     logging.INFO,
-                    f"download from HF: https://huggingface.co/2Noise/ChatTTS",
+                    "download from HF: https://huggingface.co/2Noise/ChatTTS",
                 )
                 try:
                     download_path = snapshot_download(
@@ -305,9 +305,7 @@ class Chat:
                 # Vocos on mps will crash, use cpu fallback.
                 # Plus, complex dtype used in the decode process of Vocos is not supported in torch_npu now,
                 # so we put this calculation of data on CPU instead of NPU.
-                "cpu"
-                if "mps" in str(device) or "npu" in str(device)
-                else device
+                "cpu" if "mps" in str(device) or "npu" in str(device) else device
             )
             .eval()
         )
@@ -397,7 +395,6 @@ class Chat:
         params_refine_text=RefineTextParams(),
         params_infer_code=InferCodeParams(),
     ):
-
         assert self.has_loaded(use_decoder=use_decoder)
 
         if not isinstance(text, list):
@@ -546,7 +543,6 @@ class Chat:
         return_hidden: bool,
         params: InferCodeParams,
     ):
-
         gpt = self.gpt
 
         if not isinstance(text, list):
@@ -667,7 +663,6 @@ class Chat:
         device: torch.device,
         params: RefineTextParams,
     ):
-
         gpt = self.gpt
 
         if not isinstance(text, list):

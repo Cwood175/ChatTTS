@@ -40,7 +40,6 @@ class Tokenizer:
         prompt: Optional[torch.Tensor] = None,
         device="cpu",
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-
         input_ids_lst = []
         attention_mask_lst = []
         max_input_ids_len = -1
@@ -81,9 +80,7 @@ class Tokenizer:
                 1,
                 max_input_ids_len - prompt_size - input_ids_lst[i].size(0),
                 input_ids_lst[i].size(0),
-            ).copy_(
-                input_ids_lst[i]
-            )  # left padding
+            ).copy_(input_ids_lst[i])  # left padding
         del_all(input_ids_lst)
 
         attention_mask = torch.zeros(
@@ -98,9 +95,7 @@ class Tokenizer:
                 1,
                 max_attention_mask_len - prompt_size - attention_mask_lst[i].size(0),
                 attention_mask_lst[i].size(0),
-            ).copy_(
-                attention_mask_lst[i]
-            )  # left padding
+            ).copy_(attention_mask_lst[i])  # left padding
             if prompt_size > 0:
                 attn.narrow(
                     1,
