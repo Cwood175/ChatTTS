@@ -31,12 +31,19 @@ text = ["What is [uv_break]your favorite english food?[laugh][lbreak]"]
 
 fail = False
 
-refined_text = chat.infer(
-    text,
-    refine_text_only=True,
-    params_refine_text=ChatTTS.Chat.RefineTextParams(
-        prompt="[oral_2][laugh_0][break_6]",
-        manual_seed=12345,
+try:
+    refined_text = chat.infer(
+        text,
+        refine_text_only=True,
+        params_refine_text=ChatTTS.Chat.RefineTextParams(
+            prompt="[oral_2][laugh_0][break_6]",
+            manual_seed=12345,
+        ),
+    )
+except RuntimeError as e:
+    logger.exception("chat.infer failed during refine_text: %s", e)
+    fail = True
+    refined_text = None
     ),
     split_text=False,
 )
@@ -69,7 +76,10 @@ input_ids, attention_mask, text_mask = chat.tokenizer.encode(
     device=chat.device_gpt,
 )
 with torch.inference_mode():
-    start_idx, end_idx = 0, torch.zeros(
+    start_idx = torch.zeros(
+        input_ids.shape[0], device=input_ids.device, dtype=torch.long
+    ).fill_(0)
+    end_idx = torch.zeros(
         input_ids.shape[0], device=input_ids.device, dtype=torch.long
     ).fill_(input_ids.shape[1])
 

@@ -1,32 +1,31 @@
+import logging
 import os
 import re
-import logging
 import tempfile
-from dataclasses import dataclass, asdict
-from typing import Literal, Optional, List, Tuple, Dict, Union
+from dataclasses import asdict, dataclass
 from json import load
 from pathlib import Path
+from typing import Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import torch
+from huggingface_hub import snapshot_download
 from vocos import Vocos
 from vocos.pretrained import instantiate_class
-from huggingface_hub import snapshot_download
 
 from .config import Config
-from .model import DVAE, Embed, GPT, gen_logits, Tokenizer, Speaker
+from .model import DVAE, GPT, Embed, Speaker, Tokenizer, gen_logits
+from .norm import Normalizer
 from .utils import (
-    load_safetensors,
+    FileLike,
     check_all_assets,
-    download_all_assets,
-    select_device,
-    get_latest_modified_file,
     del_all,
+    download_all_assets,
+    get_latest_modified_file,
+    load_safetensors,
+    select_device,
 )
 from .utils import logger as utils_logger
-from .utils import FileLike
-
-from .norm import Normalizer
 
 
 class Chat:
@@ -105,7 +104,7 @@ class Chat:
             if download_path is None or force_redownload:
                 self.logger.log(
                     logging.INFO,
-                    f"download from HF: https://huggingface.co/2Noise/ChatTTS",
+                    "download from HF: https://huggingface.co/2Noise/ChatTTS",
                 )
                 try:
                     download_path = snapshot_download(
@@ -305,9 +304,7 @@ class Chat:
                 # Vocos on mps will crash, use cpu fallback.
                 # Plus, complex dtype used in the decode process of Vocos is not supported in torch_npu now,
                 # so we put this calculation of data on CPU instead of NPU.
-                "cpu"
-                if "mps" in str(device) or "npu" in str(device)
-                else device
+                "cpu" if "mps" in str(device) or "npu" in str(device) else device
             )
             .eval()
         )
@@ -397,7 +394,6 @@ class Chat:
         params_refine_text=RefineTextParams(),
         params_infer_code=InferCodeParams(),
     ):
-
         assert self.has_loaded(use_decoder=use_decoder)
 
         if not isinstance(text, list):
@@ -438,8 +434,8 @@ class Chat:
                     refer_text,
                     False,
                     self.device,
-                    use_decoder,
-                    params_infer_code,
+                    return_hidden=use_decoder,
+                    params=params_infer_code,
                 )
             )
             wavs = self._decode_to_wavs(
@@ -447,7 +443,7 @@ class Chat:
                 use_decoder,
             )
             result.destroy()
-            assert len(wavs), 1
+            assert len(wavs) >= 1
             params_infer_code.spk_smp = self.sample_audio_speaker(wavs[0])
             params_infer_code.txt_smp = refer_text
 
@@ -475,8 +471,8 @@ class Chat:
                 text_remain,
                 stream,
                 self.device,
-                use_decoder,
-                params_infer_code,
+                return_hidden=use_decoder,
+                params=params_infer_code,
             ):
                 wavs = self._decode_to_wavs(
                     result.hiddens if use_decoder else result.ids,
@@ -546,7 +542,6 @@ class Chat:
         return_hidden: bool,
         params: InferCodeParams,
     ):
-
         gpt = self.gpt
 
         if not isinstance(text, list):
@@ -600,11 +595,20 @@ class Chat:
             )
             input_ids = [i.tolist() for i in input_ids]
 
-            result = gpt.llm.generate(
-                None,
-                sample_params,
-                input_ids,
-            )
+            try:
+                result = gpt.llm.generate(
+                    None,
+                    sample_params,
+                    input_ids,
+                )
+            except RuntimeError as e:
+                # Log the failure and return an empty generation to avoid unhandled exceptions
+                try:
+                    self.logger.exception("gpt.llm.generate failed: %s", e)
+                except Exception:
+                    pass
+                del text_mask, input_ids
+                return []
 
             token_ids = []
             hidden_states = []
@@ -637,24 +641,36 @@ class Chat:
                 self.gpt.device_gpt,
             )
 
-        result = gpt.generate(
-            emb,
-            input_ids,
-            temperature=torch.tensor(temperature, device=device),
-            eos_token=num_code,
-            attention_mask=attention_mask,
-            max_new_token=params.max_new_token,
-            min_new_token=params.min_new_token,
-            logits_processors=(*logits_processors, *logits_warpers),
-            infer_text=False,
-            return_hidden=return_hidden,
-            stream=stream,
-            show_tqdm=params.show_tqdm,
-            ensure_non_empty=params.ensure_non_empty,
-            stream_batch=params.stream_batch,
-            manual_seed=params.manual_seed,
-            context=self.context,
-        )
+        try:
+            result = gpt.generate(
+                emb,
+                input_ids,
+                temperature=torch.tensor(temperature, device=device),
+                eos_token=num_code,
+                attention_mask=attention_mask,
+                max_new_token=params.max_new_token,
+                min_new_token=params.min_new_token,
+                logits_processors=(*logits_processors, *logits_warpers),
+                infer_text=False,
+                return_hidden=return_hidden,
+                stream=stream,
+                show_tqdm=params.show_tqdm,
+                ensure_non_empty=params.ensure_non_empty,
+                stream_batch=params.stream_batch,
+                manual_seed=params.manual_seed,
+                context=self.context,
+            )
+        except RuntimeError as e:
+            try:
+                self.logger.exception("gpt.generate failed: %s", e)
+            except Exception:
+                pass
+            # Clean up and return an empty iterable to indicate generation failure
+            try:
+                del emb, input_ids
+            except Exception:
+                pass
+            return []
 
         del emb, input_ids
 
@@ -667,7 +683,6 @@ class Chat:
         device: torch.device,
         params: RefineTextParams,
     ):
-
         gpt = self.gpt
 
         if not isinstance(text, list):
@@ -705,9 +720,18 @@ class Chat:
             input_ids_list = [i.tolist() for i in input_ids]
             del input_ids
 
-            result = gpt.llm.generate(
-                None, sample_params, input_ids_list, params.show_tqdm
-            )
+            try:
+                result = gpt.llm.generate(
+                    None, sample_params, input_ids_list, params.show_tqdm
+                )
+            except RuntimeError as e:
+                try:
+                    self.logger.exception("gpt.llm.generate failed: %s", e)
+                except Exception:
+                    pass
+                del text_mask, input_ids_list
+                return GPT.GenerationOutputs(ids=[], hiddens=[], attentions=[])
+
             token_ids = []
             hidden_states = []
             for i in result:
@@ -726,24 +750,35 @@ class Chat:
 
         del text_mask
 
-        result = next(
-            gpt.generate(
-                emb,
-                input_ids,
-                temperature=torch.tensor([params.temperature], device=device),
-                eos_token=self.tokenizer.eos_token,
-                attention_mask=attention_mask,
-                max_new_token=params.max_new_token,
-                min_new_token=params.min_new_token,
-                logits_processors=(*logits_processors, *logits_warpers),
-                infer_text=True,
-                stream=False,
-                show_tqdm=params.show_tqdm,
-                ensure_non_empty=params.ensure_non_empty,
-                manual_seed=params.manual_seed,
-                context=self.context,
+        try:
+            result = next(
+                gpt.generate(
+                    emb,
+                    input_ids,
+                    temperature=torch.tensor([params.temperature], device=device),
+                    eos_token=self.tokenizer.eos_token,
+                    attention_mask=attention_mask,
+                    max_new_token=params.max_new_token,
+                    min_new_token=params.min_new_token,
+                    logits_processors=(*logits_processors, *logits_warpers),
+                    infer_text=True,
+                    stream=False,
+                    show_tqdm=params.show_tqdm,
+                    ensure_non_empty=params.ensure_non_empty,
+                    manual_seed=params.manual_seed,
+                    context=self.context,
+                )
             )
-        )
+        except RuntimeError as e:
+            try:
+                self.logger.exception("gpt.generate failed: %s", e)
+            except Exception:
+                pass
+            try:
+                del emb, input_ids
+            except Exception:
+                pass
+            return GPT.GenerationOutputs(ids=[], hiddens=[], attentions=[])
 
         del emb, input_ids
 
