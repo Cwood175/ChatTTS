@@ -1,5 +1,6 @@
 import os
-from setuptools import setup, find_packages
+
+from setuptools import find_packages, setup
 
 version = "v0.0.0"
 
@@ -22,6 +23,7 @@ setup(
         "numba",
         "numpy<3.0.0",
         "pybase16384",
+        "requests",
         "torch>=2.1.0",
         "torchaudio",
         "tqdm",

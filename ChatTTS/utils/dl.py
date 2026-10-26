@@ -1,10 +1,13 @@
+import hashlib
 import os
 from pathlib import Path
-import hashlib
-import requests
+
+try:
+    import requests
+except ImportError:
+    requests = None
 from io import BytesIO
-from typing import Dict, Tuple, Optional
-from mmap import mmap, ACCESS_READ
+from mmap import ACCESS_READ, mmap
 
 from .log import logger
 
@@ -46,8 +49,8 @@ def check_model(
 def check_folder(
     base_dir: Path,
     *innder_dirs: str,
-    names: Tuple[str],
-    sha256_map: Dict[str, str],
+    names: tuple[str],
+    sha256_map: dict[str, str],
     update=False,
 ) -> bool:
     key = "sha256_"
@@ -63,7 +66,7 @@ def check_folder(
     return True
 
 
-def check_all_assets(base_dir: Path, sha256_map: Dict[str, str], update=False) -> bool:
+def check_all_assets(base_dir: Path, sha256_map: dict[str, str], update=False) -> bool:
     logger.get_logger().info("checking assets...")
 
     if not check_folder(
@@ -112,7 +115,7 @@ def check_all_assets(base_dir: Path, sha256_map: Dict[str, str], update=False) -
 
 
 def download_and_extract_tar_gz(
-    url: str, folder: str, headers: Optional[Dict[str, str]] = None
+    url: str, folder: str, headers: dict[str, str] | None = None
 ):
     import tarfile
 
@@ -121,14 +124,14 @@ def download_and_extract_tar_gz(
     with BytesIO() as out_file:
         out_file.write(response.content)
         out_file.seek(0)
-        logger.get_logger().info(f"downloaded.")
+        logger.get_logger().info("downloaded.")
         with tarfile.open(fileobj=out_file, mode="r:gz") as tar:
             tar.extractall(folder)
         logger.get_logger().info(f"extracted into {folder}")
 
 
 def download_and_extract_zip(
-    url: str, folder: str, headers: Optional[Dict[str, str]] = None
+    url: str, folder: str, headers: dict[str, str] | None = None
 ):
     import zipfile
 
@@ -137,13 +140,13 @@ def download_and_extract_zip(
     with BytesIO() as out_file:
         out_file.write(response.content)
         out_file.seek(0)
-        logger.get_logger().info(f"downloaded.")
+        logger.get_logger().info("downloaded.")
         with zipfile.ZipFile(out_file) as zip_ref:
             zip_ref.extractall(folder)
         logger.get_logger().info(f"extracted into {folder}")
 
 
-def download_dns_yaml(url: str, folder: str, headers: Dict[str, str]):
+def download_dns_yaml(url: str, folder: str, headers: dict[str, str]):
     logger.get_logger().info(f"downloading {url}")
     response = requests.get(url, headers=headers, stream=True, timeout=(100, 3))
     with open(os.path.join(folder, "dns.yaml"), "wb") as out_file:
@@ -152,8 +155,8 @@ def download_dns_yaml(url: str, folder: str, headers: Dict[str, str]):
 
 
 def download_all_assets(tmpdir: str, homedir: str, version="0.2.10"):
-    import subprocess
     import platform
+    import subprocess
 
     archs = {
         "aarch64": "arm64",
